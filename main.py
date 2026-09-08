@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 SRC_DIR = PROJECT_ROOT / "src"
 VENV_DIR = PROJECT_ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-RUNTIME_CHECK = "import fastapi, opencc, uvicorn"
+RUNTIME_CHECK = "import fastapi, lunar_python, opencc, uvicorn"
 
 if SRC_DIR.exists():
     sys.path.insert(0, str(SRC_DIR))
@@ -34,7 +34,14 @@ def ensure_runtime() -> None:
 
     env = os.environ.copy()
     env["PIPINAME_BOOTSTRAPPED"] = "1"
-    os.execve(str(VENV_PYTHON), [str(VENV_PYTHON), str(PROJECT_ROOT / "main.py"), *sys.argv[1:]], env)
+    command = [str(VENV_PYTHON), str(PROJECT_ROOT / "main.py"), *sys.argv[1:]]
+    if os.name == "nt":
+        # Replacing the current process with os.execve() is unreliable in some
+        # Windows/VS Code terminal environments and can terminate the hosting
+        # shell after the first-time dependency installation. Keep PowerShell
+        # alive and forward the child process exit code instead.
+        raise SystemExit(subprocess.call(command, cwd=PROJECT_ROOT, env=env))
+    os.execve(str(VENV_PYTHON), command, env)
 
 
 def has_runtime(python: Path) -> bool:

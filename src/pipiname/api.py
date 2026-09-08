@@ -7,8 +7,9 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .core import ValidationError, check_name, generate_names
+from .bazi import calculate_bazi
 from .index import NameIndex
-from .models import GenerateOptions, SOURCE_LABELS
+from .models import BaziOptions, GenerateOptions, SOURCE_LABELS
 
 
 class GenerateRequest(BaseModel):
@@ -27,6 +28,18 @@ class GenerateRequest(BaseModel):
 class CheckRequest(BaseModel):
     name: str
     with_resource: bool = True
+
+
+class BaziRequest(BaseModel):
+    calendar_type: Literal["solar", "lunar"] = "solar"
+    year: int
+    month: int
+    day: int
+    hour: int
+    minute: int
+    is_leap_month: bool = False
+    timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
+    day_boundary: Literal["midnight", "late_zi"] = "midnight"
 
 
 def create_app(index: NameIndex | None = None) -> FastAPI:
@@ -73,6 +86,14 @@ def create_app(index: NameIndex | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return result.as_dict()
 
+    @app.post("/api/bazi/calculate")
+    def api_calculate_bazi(request: BaziRequest) -> dict[str, object]:
+        try:
+            result = calculate_bazi(BaziOptions(**request.model_dump()))
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return result.as_dict()
+
     return app
 
 
@@ -82,7 +103,7 @@ HTML_PAGE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PiPiName - 诗词古籍起名与姓名五格吉凶分析</title>
+  <title>PiPiName - 诗词古籍起名、姓名五格与八字排盘</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
@@ -327,8 +348,14 @@ HTML_PAGE = """
       overflow-y: auto;
     }
 
+    #bazi-sidebar.active {
+      flex: 1 1 auto;
+      overflow-y: auto;
+    }
+
     #generate-form,
-    #check-form {
+    #check-form,
+    #bazi-form {
       flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;
@@ -338,28 +365,33 @@ HTML_PAGE = """
     }
 
     #generate-sidebar,
-    #check-sidebar {
+    #check-sidebar,
+    #bazi-sidebar {
       padding: 16px;
     }
 
     #generate-sidebar .card-title,
-    #check-sidebar .card-title {
+    #check-sidebar .card-title,
+    #bazi-sidebar .card-title {
       margin-bottom: 10px;
       padding-bottom: 6px;
     }
 
     #generate-form .form-group,
-    #check-form .form-group {
+    #check-form .form-group,
+    #bazi-form .form-group {
       gap: 4px;
     }
 
     #generate-form .form-row,
-    #check-form .form-row {
+    #check-form .form-row,
+    #bazi-form .form-row {
       gap: 12px;
     }
 
     #generate-form label,
-    #check-form label {
+    #check-form label,
+    #bazi-form label {
       font-size: 13px;
     }
 
@@ -368,7 +400,9 @@ HTML_PAGE = """
     #generate-form select,
     #check-form input[type="text"],
     #check-form input[type="number"],
-    #check-form select {
+    #check-form select,
+    #bazi-form input[type="number"],
+    #bazi-form select {
       min-height: 36px;
       padding: 7px 10px;
       font-size: 13px;
@@ -376,20 +410,23 @@ HTML_PAGE = """
     }
 
     #generate-form .checkbox-group,
-    #check-form .checkbox-group {
+    #check-form .checkbox-group,
+    #bazi-form .checkbox-group {
       gap: 8px;
       min-height: 22px;
       font-size: 13px;
     }
 
     #generate-form .checkbox-group input,
-    #check-form .checkbox-group input {
+    #check-form .checkbox-group input,
+    #bazi-form .checkbox-group input {
       width: 15px;
       height: 15px;
     }
 
     #generate-form button.btn-primary,
-    #check-form button.btn-primary {
+    #check-form button.btn-primary,
+    #bazi-form button.btn-primary {
       min-height: 38px;
       padding: 9px 12px;
     }
@@ -430,6 +467,12 @@ HTML_PAGE = """
       color: var(--color-text);
       background-color: #fafbfc;
       transition: all 0.2s ease;
+    }
+
+    .form-help {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      line-height: 1.5;
     }
 
     input:focus, select:focus {
@@ -896,6 +939,137 @@ HTML_PAGE = """
       font-weight: 500;
     }
 
+    /* Bazi Report */
+    .bazi-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 2px;
+      scrollbar-color: rgba(148, 163, 184, 0.72) transparent;
+      scrollbar-width: thin;
+    }
+
+    .bazi-layout::-webkit-scrollbar { width: 8px; }
+    .bazi-layout::-webkit-scrollbar-track { background: transparent; }
+    .bazi-layout::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.72);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+      border-radius: 999px;
+    }
+
+    .bazi-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .bazi-summary-item,
+    .element-card,
+    .rules-card {
+      background: var(--color-card-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .bazi-summary-label {
+      color: var(--color-text-muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .bazi-summary-value {
+      color: var(--color-primary);
+      font-family: var(--font-serif);
+      font-size: 17px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .bazi-table-card {
+      background: var(--color-card-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      overflow-x: auto;
+    }
+
+    .bazi-table {
+      min-width: 700px;
+      table-layout: fixed;
+    }
+
+    .bazi-table th,
+    .bazi-table td {
+      text-align: center;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .bazi-table th:first-child,
+    .bazi-table td:first-child {
+      width: 100px;
+      color: var(--color-text-muted);
+      font-weight: 700;
+      background: #f8fafc;
+    }
+
+    .bazi-table .ganzhi-cell {
+      color: var(--color-primary);
+      font-family: var(--font-serif);
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .element-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .element-card {
+      text-align: center;
+    }
+
+    .element-name {
+      font-family: var(--font-serif);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--color-primary);
+    }
+
+    .element-count {
+      font-size: 24px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .section-heading {
+      font-family: var(--font-serif);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--color-primary);
+      margin-bottom: 10px;
+    }
+
+    .rules-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px 16px;
+      font-size: 13px;
+      color: var(--color-text-muted);
+    }
+
+    .rules-note {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--color-border);
+      font-size: 12px;
+      color: #9a3412;
+    }
+
     /* Resources Section in Check Result */
     .wuge-resources {
       margin-top: 12px;
@@ -1006,7 +1180,8 @@ HTML_PAGE = """
 
       .sidebar,
       .content-area,
-      .wuge-layout {
+      .wuge-layout,
+      .bazi-layout {
         height: auto;
         overflow: visible;
       }
@@ -1017,6 +1192,10 @@ HTML_PAGE = """
 
       .table-container {
         max-height: 60vh;
+      }
+
+      .element-grid {
+        grid-template-columns: repeat(2, 1fr);
       }
 
       footer {
@@ -1030,7 +1209,7 @@ HTML_PAGE = """
     <header>
       <div class="logo-area">
         <h1>PiPiName</h1>
-        <div class="subtitle">诗词古籍智能起名与姓名五格吉凶分析系统</div>
+        <div class="subtitle">诗词古籍智能起名、姓名五格分析与八字排盘系统</div>
       </div>
       <a href="https://github.com/nanbox/PiPiName" target="_blank" class="author-link">GitHub 仓库</a>
     </header>
@@ -1041,6 +1220,7 @@ HTML_PAGE = """
         <div class="sidebar-tabs">
           <button class="sidebar-tab-btn active" onclick="switchSidebarTab('generate')">智能起名</button>
           <button class="sidebar-tab-btn" onclick="switchSidebarTab('check')">姓名分析</button>
+          <button class="sidebar-tab-btn" onclick="switchSidebarTab('bazi')">八字排盘</button>
         </div>
 
         <!-- 生成姓名表单 -->
@@ -1128,6 +1308,64 @@ HTML_PAGE = """
           </form>
         </div>
 
+        <!-- 八字排盘表单 -->
+        <div id="bazi-sidebar" class="card sidebar-pane">
+          <div class="card-title">出生信息配置</div>
+          <form id="bazi-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>历法类型</label>
+                <select name="calendar_type" id="bazi-calendar-type">
+                  <option value="solar">公历（阳历）</option>
+                  <option value="lunar">农历（阴历）</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>时区</label>
+                <select name="timezone">
+                  <option value="Asia/Shanghai">中国标准时间 UTC+8</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>出生年份</label>
+                <input type="number" name="year" min="1900" max="2100" required>
+              </div>
+              <div class="form-group">
+                <label>出生月份</label>
+                <input type="number" name="month" min="1" max="12" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>出生日期</label>
+                <input type="number" name="day" min="1" max="31" required>
+              </div>
+              <div class="form-group">
+                <label>出生时间</label>
+                <div class="form-row">
+                  <input type="number" name="hour" min="0" max="23" required aria-label="小时" placeholder="时">
+                  <input type="number" name="minute" min="0" max="59" required aria-label="分钟" placeholder="分">
+                </div>
+              </div>
+            </div>
+            <div class="checkbox-group" id="bazi-leap-month-group" style="display:none;">
+              <input name="is_leap_month" type="checkbox" id="bazi-is-leap-month">
+              <label for="bazi-is-leap-month">该月为农历闰月</label>
+            </div>
+            <div class="form-group">
+              <label>子时换日规则</label>
+              <select name="day_boundary">
+                <option value="midnight">午夜换日（00:00，默认）</option>
+                <option value="late_zi">晚子时换日（23:00）</option>
+              </select>
+            </div>
+            <div class="form-help">年柱以立春、月柱以节气精确时刻为界。当前按中国标准时间计算，不进行真太阳时校正。</div>
+            <button type="submit" class="btn-primary">生成八字排盘</button>
+          </form>
+        </div>
+
         <div class="card health-card" id="check-health-card">
           <div class="health-card-title">
             <span>本地索引状态</span>
@@ -1158,6 +1396,7 @@ HTML_PAGE = """
         <div class="content-tabs">
           <button class="content-tab-btn active" id="tab-btn-results" onclick="switchContentTab('results')">名字候选列表</button>
           <button class="content-tab-btn" id="tab-btn-analysis" onclick="switchContentTab('analysis')">五格吉凶分析</button>
+          <button class="content-tab-btn" id="tab-btn-bazi" onclick="switchContentTab('bazi')">八字排盘结果</button>
         </div>
 
         <!-- 全局消息条 -->
@@ -1252,28 +1491,66 @@ HTML_PAGE = """
             </div>
           </div>
         </div>
+
+        <!-- Tab 3: 八字排盘结果 -->
+        <div id="tab-bazi" class="tab-content">
+          <div id="bazi-empty" class="card empty-state">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <circle cx="12" cy="12" r="9" stroke-width="1.5"></circle>
+              <path stroke-linecap="round" stroke-width="1.5" d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"></path>
+            </svg>
+            <p>请在左侧“八字排盘”中填写出生日期和时间，此处将展示四柱、十神、藏干、纳音及五行表层分布。</p>
+          </div>
+          <div id="bazi-content" class="bazi-layout" style="display:none;">
+            <div class="bazi-summary">
+              <div class="bazi-summary-item"><div class="bazi-summary-label">公历时间</div><div id="bazi-solar" class="bazi-summary-value">-</div></div>
+              <div class="bazi-summary-item"><div class="bazi-summary-label">农历时间</div><div id="bazi-lunar" class="bazi-summary-value">-</div></div>
+              <div class="bazi-summary-item"><div class="bazi-summary-label">生肖 / 时辰</div><div id="bazi-zodiac" class="bazi-summary-value">-</div></div>
+              <div class="bazi-summary-item"><div class="bazi-summary-label">日主</div><div id="bazi-day-master" class="bazi-summary-value">-</div></div>
+            </div>
+            <div class="bazi-table-card">
+              <table class="bazi-table">
+                <thead><tr><th>项目</th><th>年柱</th><th>月柱</th><th>日柱</th><th>时柱</th></tr></thead>
+                <tbody id="bazi-table-body"></tbody>
+              </table>
+            </div>
+            <div>
+              <div class="section-heading">五行表层分布</div>
+              <div id="bazi-elements" class="element-grid"></div>
+            </div>
+            <div class="rules-card">
+              <div class="section-heading">本次计算规则</div>
+              <div id="bazi-rules" class="rules-list"></div>
+              <div id="bazi-rules-note" class="rules-note"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
 
     <footer>
-      <p>PiPiName 本地起名候选辅助工具 · 结果仅作为文化出处和姓名汉字笔画组合分析参考</p>
+      <p>PiPiName 本地传统文化辅助工具 · 起名、五格与八字结果仅供文化参考，不构成专业建议</p>
     </footer>
   </div>
 
   <script>
     const genForm = document.getElementById('generate-form');
     const checkForm = document.getElementById('check-form');
+    const baziForm = document.getElementById('bazi-form');
     const messageBanner = document.getElementById('message');
     const resultTbody = document.getElementById('result-tbody');
     const resultsEmpty = document.getElementById('results-empty');
     const resultsTableWrapper = document.getElementById('results-table-wrapper');
     const analysisEmpty = document.getElementById('analysis-empty');
     const analysisContent = document.getElementById('analysis-content');
+    const baziEmpty = document.getElementById('bazi-empty');
+    const baziContent = document.getElementById('bazi-content');
 
     // Tab 切换逻辑
     function switchSidebarTab(tab) {
       document.getElementById('generate-sidebar').classList.toggle('active', tab === 'generate');
       document.getElementById('check-sidebar').classList.toggle('active', tab === 'check');
+      document.getElementById('bazi-sidebar').classList.toggle('active', tab === 'bazi');
       const generateHealthCard = document.getElementById('generate-health-card');
       if (generateHealthCard) {
         generateHealthCard.style.display = tab === 'generate' ? 'block' : 'none';
@@ -1282,18 +1559,24 @@ HTML_PAGE = """
       if (checkHealthCard) {
         checkHealthCard.style.display = tab === 'check' ? 'block' : 'none';
       }
+      if (tab === 'bazi') {
+        switchContentTab('bazi');
+      }
       
       const btns = document.querySelectorAll('.sidebar-tab-btn');
       btns[0].classList.toggle('active', tab === 'generate');
       btns[1].classList.toggle('active', tab === 'check');
+      btns[2].classList.toggle('active', tab === 'bazi');
     }
 
     // 修复 Content Tab 切换逻辑，避免 DOM 错误
     function switchContentTab(tab) {
       document.getElementById('tab-btn-results').classList.toggle('active', tab === 'results');
       document.getElementById('tab-btn-analysis').classList.toggle('active', tab === 'analysis');
+      document.getElementById('tab-btn-bazi').classList.toggle('active', tab === 'bazi');
       document.getElementById('tab-results').classList.toggle('active', tab === 'results');
       document.getElementById('tab-analysis').classList.toggle('active', tab === 'analysis');
+      document.getElementById('tab-bazi').classList.toggle('active', tab === 'bazi');
     }
 
     function showMessage(text, type = 'info') {
@@ -1549,8 +1832,123 @@ HTML_PAGE = """
       await analyzeName(name, withResource);
     });
 
+    function setBaziDefaults() {
+      const now = new Date();
+      baziForm.querySelector('[name="year"]').value = now.getFullYear();
+      baziForm.querySelector('[name="month"]').value = now.getMonth() + 1;
+      baziForm.querySelector('[name="day"]').value = now.getDate();
+      baziForm.querySelector('[name="hour"]').value = now.getHours();
+      baziForm.querySelector('[name="minute"]').value = now.getMinutes();
+    }
+
+    function renderBaziReport(report) {
+      document.getElementById('bazi-solar').textContent = report.solar_datetime;
+      document.getElementById('bazi-lunar').textContent = report.lunar_datetime;
+      document.getElementById('bazi-zodiac').textContent = `${report.zodiac} / ${report.time_branch}时`;
+      document.getElementById('bazi-day-master').textContent = `${report.day_master.yinyang}${report.day_master.element} · ${report.day_master.stem}`;
+
+      const rows = [
+        ['八字', (pillar) => pillar.ganzhi, 'ganzhi-cell'],
+        ['天干五行', (pillar) => `${pillar.stem} · ${pillar.stem_yinyang}${pillar.stem_element}`],
+        ['地支五行', (pillar) => `${pillar.branch} · ${pillar.branch_element}`],
+        ['十神', (pillar) => pillar.ten_god],
+        ['藏干', (pillar) => pillar.hidden_stems.join('、')],
+        ['藏干十神', (pillar) => pillar.hidden_ten_gods.join('、')],
+        ['纳音', (pillar) => pillar.nayin],
+        ['地势', (pillar) => pillar.di_shi],
+      ];
+      const tableBody = document.getElementById('bazi-table-body');
+      tableBody.innerHTML = '';
+      for (const [label, valueGetter, cellClass] of rows) {
+        const tr = document.createElement('tr');
+        const labelCell = document.createElement('td');
+        labelCell.textContent = label;
+        tr.appendChild(labelCell);
+        for (const pillar of report.pillars) {
+          const td = document.createElement('td');
+          td.textContent = valueGetter(pillar);
+          if (cellClass) td.className = cellClass;
+          tr.appendChild(td);
+        }
+        tableBody.appendChild(tr);
+      }
+
+      const elements = document.getElementById('bazi-elements');
+      elements.innerHTML = '';
+      for (const element of ['木', '火', '土', '金', '水']) {
+        const card = document.createElement('div');
+        card.className = 'element-card';
+        const name = document.createElement('div');
+        name.className = 'element-name';
+        name.textContent = element;
+        const count = document.createElement('div');
+        count.className = 'element-count';
+        count.textContent = report.five_elements[element];
+        card.append(name, count);
+        elements.appendChild(card);
+      }
+
+      const rules = document.getElementById('bazi-rules');
+      rules.innerHTML = '';
+      const ruleLabels = {
+        year_boundary: '年柱边界',
+        month_boundary: '月柱边界',
+        day_boundary: '日柱边界',
+        time_basis: '时间基准',
+        true_solar_time: '真太阳时',
+      };
+      for (const [key, label] of Object.entries(ruleLabels)) {
+        const item = document.createElement('div');
+        item.textContent = `${label}：${report.rules[key]}`;
+        rules.appendChild(item);
+      }
+      document.getElementById('bazi-rules-note').textContent = report.rules.five_elements_note;
+      baziEmpty.style.display = 'none';
+      baziContent.style.display = 'flex';
+    }
+
+    document.getElementById('bazi-calendar-type').addEventListener('change', (event) => {
+      const lunar = event.target.value === 'lunar';
+      document.getElementById('bazi-leap-month-group').style.display = lunar ? 'flex' : 'none';
+      if (!lunar) document.getElementById('bazi-is-leap-month').checked = false;
+    });
+
+    baziForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(baziForm);
+      const payload = {
+        calendar_type: data.get('calendar_type'),
+        year: Number(data.get('year')),
+        month: Number(data.get('month')),
+        day: Number(data.get('day')),
+        hour: Number(data.get('hour')),
+        minute: Number(data.get('minute')),
+        is_leap_month: data.get('is_leap_month') === 'on',
+        timezone: data.get('timezone'),
+        day_boundary: data.get('day_boundary'),
+      };
+      showMessage('正在依据节气精确时刻生成四柱八字...', 'info');
+      switchContentTab('bazi');
+      baziEmpty.style.display = 'none';
+      baziContent.style.display = 'none';
+      try {
+        const response = await fetch('/api/bazi/calculate', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        const report = await readJson(response);
+        renderBaziReport(report);
+        hideMessage();
+      } catch (error) {
+        showMessage(error.message, 'error');
+        baziEmpty.style.display = 'flex';
+      }
+    });
+
     // 初始化加载
     document.addEventListener('DOMContentLoaded', () => {
+      setBaziDefaults();
       loadHealth();
     });
   </script>

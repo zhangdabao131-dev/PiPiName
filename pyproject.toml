@@ -12,6 +12,7 @@ license = "MIT"
 authors = [{ name = "NanBox" }]
 dependencies = [
     "fastapi>=0.111,<1.0",
+    "lunar-python>=1.4.8,<2.0",
     "opencc-python-reimplemented>=0.1.7,<0.2",
     "uvicorn>=0.30,<1.0",
 ]

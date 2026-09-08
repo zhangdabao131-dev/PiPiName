@@ -116,3 +116,69 @@ class CheckResult:
             "report": self.report.as_dict(),
             "resources": [resource.as_dict() for resource in self.resources],
         }
+
+
+@dataclass(frozen=True)
+class BaziOptions:
+    calendar_type: str
+    year: int
+    month: int
+    day: int
+    hour: int
+    minute: int
+    is_leap_month: bool = False
+    timezone: str = "Asia/Shanghai"
+    day_boundary: str = "midnight"
+
+
+@dataclass(frozen=True)
+class BaziPillar:
+    name: str
+    stem: str
+    branch: str
+    ganzhi: str
+    stem_element: str
+    branch_element: str
+    stem_yinyang: str
+    hidden_stems: tuple[str, ...]
+    hidden_ten_gods: tuple[str, ...]
+    ten_god: str
+    nayin: str
+    di_shi: str
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class DayMaster:
+    stem: str
+    element: str
+    yinyang: str
+
+    def as_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BaziReport:
+    solar_datetime: str
+    lunar_datetime: str
+    zodiac: str
+    time_branch: str
+    day_master: DayMaster
+    pillars: tuple[BaziPillar, ...]
+    five_elements: dict[str, int]
+    rules: dict[str, str]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "solar_datetime": self.solar_datetime,
+            "lunar_datetime": self.lunar_datetime,
+            "zodiac": self.zodiac,
+            "time_branch": self.time_branch,
+            "day_master": self.day_master.as_dict(),
+            "pillars": [pillar.as_dict() for pillar in self.pillars],
+            "five_elements": self.five_elements,
+            "rules": self.rules,
+        }

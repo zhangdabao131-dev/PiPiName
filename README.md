@@ -1,10 +1,10 @@
 # PiPiName
 
-PiPiName 是一个本地中文取名候选工具。它根据三才五格筛选笔画组合，再从诗经、楚辞、论语、周易、唐诗、宋诗、宋词和常见姓名库中生成双字名候选。
+PiPiName 是一个本地中文取名和传统文化辅助工具。它根据三才五格筛选笔画组合，再从诗经、楚辞、论语、周易、唐诗、宋诗、宋词和常见姓名库中生成双字名候选，并支持姓名五格分析与基础八字排盘。
 
 相关阅读可以[看这里](https://juejin.cn/post/6868186071260856334)。
 
-> 结果只作为文化出处和候选筛选辅助，不承诺命理正确性，也不替代人工判断。
+> 结果只作为传统文化、文化出处和候选筛选辅助，不承诺命理正确性，也不替代人工或专业判断。
 
 ![PiPiName Web 界面](docs/assets/pipiname-web.png)
 
@@ -24,7 +24,13 @@ pipiname web --open
 
 打开 `http://localhost:9191` 使用页面，打开 `http://localhost:9191/docs` 使用 API 文档。
 
-网页里可以直接生成名字，也可以在“查看姓名”区域输入三字姓名查看三才五格和名字来源。
+网页提供三个功能区域：
+
+- “智能起名”：生成带有古籍出处的双字名候选。
+- “姓名分析”：查看单姓双字名的三才五格和名字来源。
+- “八字排盘”：根据公历或农历出生日期生成四柱、十神、藏干、纳音、地势和五行表层分布。
+
+八字排盘当前支持 1900—2100 年，按 `Asia/Shanghai` 中国标准时间计算，默认在 `00:00` 换日，也可以选择 `23:00` 晚子时换日。当前不进行出生地经度和真太阳时校正。
 
 ## API
 
@@ -80,8 +86,40 @@ pipiname web --open
 }
 ```
 
+### `POST /api/bazi/calculate`
+
+公历请求示例：
+
+```json
+{
+  "calendar_type": "solar",
+  "year": 1990,
+  "month": 5,
+  "day": 18,
+  "hour": 14,
+  "minute": 30,
+  "is_leap_month": false,
+  "timezone": "Asia/Shanghai",
+  "day_boundary": "midnight"
+}
+```
+
+农历日期将 `calendar_type` 设置为 `lunar`；如果输入的是闰月，同时将 `is_leap_month` 设置为 `true`。
+
+响应包含：
+
+- 公历和农历出生时间
+- 生肖、时辰和日主
+- 年柱、月柱、日柱、时柱
+- 每柱的干支五行、阴阳、十神、藏干、藏干十神、纳音和地势
+- 四柱干支的五行表层数量
+- 本次排盘使用的年柱、月柱、换日、时区和真太阳时规则
+
+八字年柱以立春精确时刻为界，月柱以十二节精确时刻为界。五行数量只统计四柱天干地支的表层分布，不代表五行旺衰、身强身弱或喜用神。
+
 ## 数据来源
 
+- [lunar-python](https://github.com/6tail/lunar-python)
 - [OpenCC](https://github.com/BYVoid/OpenCC)
 - [chinese-poetry](https://github.com/chinese-poetry/chinese-poetry)
 - [chineseStroke](https://github.com/WTree/chineseStroke)

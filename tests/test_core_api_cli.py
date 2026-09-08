@@ -92,6 +92,12 @@ def test_api_endpoints():
     assert "function displayGender" in home
     assert "!['未知', '双'].includes(gender)" in home
     assert "#generate-sidebar.active" in home
+    assert '#bazi-sidebar.active' in home
+    assert 'id="bazi-form"' in home
+    assert 'id="tab-bazi"' in home
+    assert "fetch('/api/bazi/calculate'" in home
+    assert "function renderBaziReport" in home
+    assert "五行表层分布" in home
     assert "flex: 1 1 auto" in home
     assert "justify-content: space-between" in home
     assert "#check-form" in home
