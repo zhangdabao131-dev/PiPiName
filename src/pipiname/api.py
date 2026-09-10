@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .core import ValidationError, check_name, generate_names
-from .bazi import calculate_bazi
+from .bazi import analyze_bazi, calculate_bazi
 from .index import NameIndex
 from .models import BaziOptions, GenerateOptions, SOURCE_LABELS
 
@@ -40,6 +40,8 @@ class BaziRequest(BaseModel):
     is_leap_month: bool = False
     timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
     day_boundary: Literal["midnight", "late_zi"] = "midnight"
+    gender: Literal["男", "女"] = "男"
+    yun_sect: Literal[1, 2] = 1
 
 
 def create_app(index: NameIndex | None = None) -> FastAPI:
@@ -93,6 +95,13 @@ def create_app(index: NameIndex | None = None) -> FastAPI:
         except ValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return result.as_dict()
+
+    @app.post("/api/bazi/analyze")
+    def api_analyze_bazi(request: BaziRequest) -> dict[str, object]:
+        try:
+            return analyze_bazi(BaziOptions(**request.model_dump()))
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app
 
@@ -997,30 +1006,51 @@ HTML_PAGE = """
     }
 
     .bazi-table {
+      width: 100%;
       min-width: 700px;
       table-layout: fixed;
     }
 
+    .bazi-table .bazi-label-column {
+      width: 96px;
+    }
+
+    .bazi-table .bazi-pillar-column {
+      width: calc((100% - 96px) / 4);
+    }
+
     .bazi-table th,
     .bazi-table td {
+      width: auto;
+      max-width: none;
       text-align: center;
       padding: 10px 8px;
       border-bottom: 1px solid var(--color-border);
+      line-height: 1.5;
+      vertical-align: middle;
+      white-space: normal;
     }
 
     .bazi-table th:first-child,
     .bazi-table td:first-child {
-      width: 100px;
       color: var(--color-text-muted);
       font-weight: 700;
       background: #f8fafc;
+      white-space: nowrap;
     }
 
     .bazi-table .ganzhi-cell {
       color: var(--color-primary);
       font-family: var(--font-serif);
-      font-size: 24px;
       font-weight: 700;
+    }
+
+    .bazi-table .bazi-long-text {
+      padding-inline: 12px;
+      font-size: 14px;
+      line-height: 1.7;
+      overflow-wrap: anywhere;
+      word-break: normal;
     }
 
     .element-grid {
@@ -1068,6 +1098,61 @@ HTML_PAGE = """
       border-top: 1px solid var(--color-border);
       font-size: 12px;
       color: #9a3412;
+    }
+
+    .relation-list,
+    .dayun-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .relation-item,
+    .dayun-card {
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fff;
+    }
+
+    .relation-title,
+    .dayun-title {
+      color: var(--color-primary);
+      font-family: var(--font-serif);
+      font-weight: 700;
+    }
+
+    .relation-detail,
+    .dayun-meta {
+      margin-top: 4px;
+      color: var(--color-text-muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .dayun-card summary {
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .dayun-card summary::-webkit-details-marker { display: none; }
+
+    .liunian-table {
+      width: 100%;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+
+    .liunian-table th,
+    .liunian-table td {
+      padding: 8px;
+      text-align: left;
+      border-top: 1px solid var(--color-border);
+      vertical-align: top;
+    }
+
+    .empty-inline {
+      color: var(--color-text-muted);
+      font-size: 13px;
     }
 
     /* Resources Section in Check Result */
@@ -1211,7 +1296,7 @@ HTML_PAGE = """
         <h1>PiPiName</h1>
         <div class="subtitle">诗词古籍智能起名、姓名五格分析与八字排盘系统</div>
       </div>
-      <a href="https://github.com/nanbox/PiPiName" target="_blank" class="author-link">GitHub 仓库</a>
+      <a href="https://github.com/zhangdabao131-dev/PiPiName" target="_blank" rel="noopener noreferrer" class="author-link">GitHub 仓库</a>
     </header>
 
     <main>
@@ -1241,7 +1326,6 @@ HTML_PAGE = """
                 </select>
               </div>
             </div>
-
             <div class="form-group">
               <label>词库来源</label>
               <select name="source">
@@ -1329,6 +1413,22 @@ HTML_PAGE = """
             </div>
             <div class="form-row">
               <div class="form-group">
+                <label>性别（用于大运顺逆）</label>
+                <select name="gender">
+                  <option value="男">男</option>
+                  <option value="女">女</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>起运算法口径</label>
+                <select name="yun_sect">
+                  <option value="1">sect 1（默认）</option>
+                  <option value="2">sect 2（分钟折算）</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
                 <label>出生年份</label>
                 <input type="number" name="year" min="1900" max="2100" required>
               </div>
@@ -1361,8 +1461,8 @@ HTML_PAGE = """
                 <option value="late_zi">晚子时换日（23:00）</option>
               </select>
             </div>
-            <div class="form-help">年柱以立春、月柱以节气精确时刻为界。当前按中国标准时间计算，不进行真太阳时校正。</div>
-            <button type="submit" class="btn-primary">生成八字排盘</button>
+            <div class="form-help">年柱以立春、月柱以节气精确时刻为界。当前按中国标准时间计算，不进行真太阳时校正。起运口径可切换对照。</div>
+            <button type="submit" class="btn-primary">生成排盘与运程分析</button>
           </form>
         </div>
 
@@ -1507,9 +1607,15 @@ HTML_PAGE = """
               <div class="bazi-summary-item"><div class="bazi-summary-label">农历时间</div><div id="bazi-lunar" class="bazi-summary-value">-</div></div>
               <div class="bazi-summary-item"><div class="bazi-summary-label">生肖 / 时辰</div><div id="bazi-zodiac" class="bazi-summary-value">-</div></div>
               <div class="bazi-summary-item"><div class="bazi-summary-label">日主</div><div id="bazi-day-master" class="bazi-summary-value">-</div></div>
+              <div class="bazi-summary-item"><div class="bazi-summary-label">大运顺逆</div><div id="bazi-yun-direction" class="bazi-summary-value">-</div></div>
+              <div class="bazi-summary-item"><div class="bazi-summary-label">起运</div><div id="bazi-yun-start" class="bazi-summary-value">-</div></div>
             </div>
             <div class="bazi-table-card">
               <table class="bazi-table">
+                <colgroup>
+                  <col class="bazi-label-column">
+                  <col class="bazi-pillar-column" span="4">
+                </colgroup>
                 <thead><tr><th>项目</th><th>年柱</th><th>月柱</th><th>日柱</th><th>时柱</th></tr></thead>
                 <tbody id="bazi-table-body"></tbody>
               </table>
@@ -1519,9 +1625,18 @@ HTML_PAGE = """
               <div id="bazi-elements" class="element-grid"></div>
             </div>
             <div class="rules-card">
+              <div class="section-heading">本命干支关系证据</div>
+              <div id="bazi-relations" class="relation-list"></div>
+            </div>
+            <div>
+              <div class="section-heading">大运与流年时间轴</div>
+              <div id="bazi-dayun" class="dayun-list"></div>
+            </div>
+            <div class="rules-card">
               <div class="section-heading">本次计算规则</div>
               <div id="bazi-rules" class="rules-list"></div>
               <div id="bazi-rules-note" class="rules-note"></div>
+              <div id="bazi-disclaimer" class="rules-note"></div>
             </div>
           </div>
         </div>
@@ -1846,6 +1961,8 @@ HTML_PAGE = """
       document.getElementById('bazi-lunar').textContent = report.lunar_datetime;
       document.getElementById('bazi-zodiac').textContent = `${report.zodiac} / ${report.time_branch}时`;
       document.getElementById('bazi-day-master').textContent = `${report.day_master.yinyang}${report.day_master.element} · ${report.day_master.stem}`;
+      document.getElementById('bazi-yun-direction').textContent = `${report.yun.gender} · ${report.yun.direction}`;
+      document.getElementById('bazi-yun-start').textContent = `${report.yun.start_age}（${report.yun.start_solar}）`;
 
       const rows = [
         ['八字', (pillar) => pillar.ganzhi, 'ganzhi-cell'],
@@ -1853,7 +1970,7 @@ HTML_PAGE = """
         ['地支五行', (pillar) => `${pillar.branch} · ${pillar.branch_element}`],
         ['十神', (pillar) => pillar.ten_god],
         ['藏干', (pillar) => pillar.hidden_stems.join('、')],
-        ['藏干十神', (pillar) => pillar.hidden_ten_gods.join('、')],
+        ['藏干十神', (pillar) => pillar.hidden_ten_gods.join('、'), 'bazi-long-text'],
         ['纳音', (pillar) => pillar.nayin],
         ['地势', (pillar) => pillar.di_shi],
       ];
@@ -1888,6 +2005,65 @@ HTML_PAGE = """
         elements.appendChild(card);
       }
 
+      renderRelations(document.getElementById('bazi-relations'), report.natal_relations);
+
+      const dayunList = document.getElementById('bazi-dayun');
+      dayunList.innerHTML = '';
+      for (const period of report.yun.periods) {
+        const details = document.createElement('details');
+        details.className = 'dayun-card';
+        details.open = period.index <= 1;
+        const summary = document.createElement('summary');
+        const title = document.createElement('div');
+        title.className = 'dayun-title';
+        title.textContent = period.ganzhi ? `${period.label} · ${period.ganzhi}` : period.label;
+        const meta = document.createElement('div');
+        meta.className = 'dayun-meta';
+        meta.textContent = `${period.start_year}—${period.end_year}年 · ${period.start_age}—${period.end_age}岁`;
+        summary.append(title, meta);
+        details.appendChild(summary);
+        if (period.relations.length) {
+          const relationHeading = document.createElement('div');
+          relationHeading.className = 'dayun-meta';
+          relationHeading.textContent = '该步大运与原局关系：';
+          details.appendChild(relationHeading);
+          const relationContainer = document.createElement('div');
+          relationContainer.className = 'relation-list';
+          renderRelations(relationContainer, period.relations);
+          details.appendChild(relationContainer);
+        }
+        const table = document.createElement('table');
+        table.className = 'liunian-table';
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        for (const label of ['年份', '年龄', '流年', '新增关系证据']) {
+          const th = document.createElement('th');
+          th.textContent = label;
+          headRow.appendChild(th);
+        }
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        for (const year of period.liu_nian) {
+          const tr = document.createElement('tr');
+          const values = [year.year, `${year.age}岁`, year.ganzhi];
+          for (const value of values) {
+            const td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          }
+          const relationCell = document.createElement('td');
+          relationCell.textContent = year.relations.length
+            ? year.relations.map(formatRelationSummary).join('；')
+            : '未检出本规则集中的新增关系';
+          tr.appendChild(relationCell);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        details.appendChild(table);
+        dayunList.appendChild(details);
+      }
+
       const rules = document.getElementById('bazi-rules');
       rules.innerHTML = '';
       const ruleLabels = {
@@ -1896,15 +2072,46 @@ HTML_PAGE = """
         day_boundary: '日柱边界',
         time_basis: '时间基准',
         true_solar_time: '真太阳时',
+        yun_sect: '起运口径',
+        yun_range: '运程范围',
+        method_version: '规则版本',
       };
       for (const [key, label] of Object.entries(ruleLabels)) {
         const item = document.createElement('div');
         item.textContent = `${label}：${report.rules[key]}`;
         rules.appendChild(item);
       }
-      document.getElementById('bazi-rules-note').textContent = report.rules.five_elements_note;
+      document.getElementById('bazi-rules-note').textContent = `${report.rules.five_elements_note}。${report.rules.interpretation_note}`;
+      document.getElementById('bazi-disclaimer').textContent = '传统文化参考声明：以上关系不自动代表吉凶，不应用于医疗、法律、投资、婚恋或其他重大现实决策。';
       baziEmpty.style.display = 'none';
       baziContent.style.display = 'flex';
+    }
+
+    function formatRelationSummary(relation) {
+      return `${relation.name}（${relation.participants.join('、')}：${relation.symbols.join('、')}）`;
+    }
+
+    function renderRelations(container, relations) {
+      container.innerHTML = '';
+      if (!relations.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-inline';
+        empty.textContent = '未检出当前规则集覆盖的合、冲、刑、害、破、三合或三会关系。';
+        container.appendChild(empty);
+        return;
+      }
+      for (const relation of relations) {
+        const item = document.createElement('div');
+        item.className = 'relation-item';
+        const title = document.createElement('div');
+        title.className = 'relation-title';
+        title.textContent = formatRelationSummary(relation);
+        const detail = document.createElement('div');
+        detail.className = 'relation-detail';
+        detail.textContent = `${relation.interpretation} 置信度：${relation.confidence}`;
+        item.append(title, detail);
+        container.appendChild(item);
+      }
     }
 
     document.getElementById('bazi-calendar-type').addEventListener('change', (event) => {
@@ -1926,19 +2133,21 @@ HTML_PAGE = """
         is_leap_month: data.get('is_leap_month') === 'on',
         timezone: data.get('timezone'),
         day_boundary: data.get('day_boundary'),
+        gender: data.get('gender'),
+        yun_sect: Number(data.get('yun_sect')),
       };
-      showMessage('正在依据节气精确时刻生成四柱八字...', 'info');
+      showMessage('正在依据节气精确时刻生成四柱、大运与流年...', 'info');
       switchContentTab('bazi');
       baziEmpty.style.display = 'none';
       baziContent.style.display = 'none';
       try {
-        const response = await fetch('/api/bazi/calculate', {
+        const response = await fetch('/api/bazi/analyze', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(payload),
         });
-        const report = await readJson(response);
-        renderBaziReport(report);
+        const result = await readJson(response);
+        renderBaziReport(result.calculation);
         hideMessage();
       } catch (error) {
         showMessage(error.message, 'error');

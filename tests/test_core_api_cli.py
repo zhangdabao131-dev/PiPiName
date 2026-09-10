@@ -62,6 +62,8 @@ def test_api_endpoints():
 
     home = client.get("/").text
     assert "查看姓名" in home
+    assert 'href="https://github.com/zhangdabao131-dev/PiPiName"' in home
+    assert "https://github.com/nanbox/PiPiName" not in home
     assert "table-container" in home
     assert "table-header" in home
     assert "table-body" in home
@@ -95,9 +97,26 @@ def test_api_endpoints():
     assert '#bazi-sidebar.active' in home
     assert 'id="bazi-form"' in home
     assert 'id="tab-bazi"' in home
-    assert "fetch('/api/bazi/calculate'" in home
+    assert "fetch('/api/bazi/analyze'" in home
     assert "function renderBaziReport" in home
     assert "五行表层分布" in home
+    assert 'class="bazi-label-column"' in home
+    assert 'class="bazi-pillar-column" span="4"' in home
+    assert ".bazi-table .bazi-long-text" in home
+    assert "width: calc((100% - 96px) / 4)" in home
+    assert "max-width: none" in home
+    assert (
+        ".bazi-table .ganzhi-cell {\n"
+        "      color: var(--color-primary);\n"
+        "      font-family: var(--font-serif);\n"
+        "      font-weight: 700;\n"
+        "    }"
+    ) in home
+    assert "overflow-wrap: anywhere" in home
+    assert 'name="yun_sect"' in home
+    assert 'id="bazi-dayun"' in home
+    assert 'id="bazi-relations"' in home
+    assert "传统文化参考声明" in home
     assert "flex: 1 1 auto" in home
     assert "justify-content: space-between" in home
     assert "#check-form" in home

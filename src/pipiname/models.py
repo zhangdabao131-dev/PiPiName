@@ -129,6 +129,8 @@ class BaziOptions:
     is_leap_month: bool = False
     timezone: str = "Asia/Shanghai"
     day_boundary: str = "midnight"
+    gender: str = "男"
+    yun_sect: int = 1
 
 
 @dataclass(frozen=True)
@@ -161,6 +163,81 @@ class DayMaster:
 
 
 @dataclass(frozen=True)
+class BaziRelation:
+    category: str
+    name: str
+    participants: tuple[str, ...]
+    symbols: tuple[str, ...]
+    interpretation: str
+    confidence: str = "high"
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class LiuNianPeriod:
+    year: int
+    age: int
+    ganzhi: str
+    relations: tuple[BaziRelation, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "year": self.year,
+            "age": self.age,
+            "ganzhi": self.ganzhi,
+            "relations": [relation.as_dict() for relation in self.relations],
+        }
+
+
+@dataclass(frozen=True)
+class DaYunPeriod:
+    index: int
+    ganzhi: str
+    label: str
+    start_year: int
+    end_year: int
+    start_age: int
+    end_age: int
+    relations: tuple[BaziRelation, ...]
+    liu_nian: tuple[LiuNianPeriod, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "ganzhi": self.ganzhi,
+            "label": self.label,
+            "start_year": self.start_year,
+            "end_year": self.end_year,
+            "start_age": self.start_age,
+            "end_age": self.end_age,
+            "relations": [relation.as_dict() for relation in self.relations],
+            "liu_nian": [period.as_dict() for period in self.liu_nian],
+        }
+
+
+@dataclass(frozen=True)
+class YunReport:
+    gender: str
+    direction: str
+    sect: int
+    start_age: str
+    start_solar: str
+    periods: tuple[DaYunPeriod, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "gender": self.gender,
+            "direction": self.direction,
+            "sect": self.sect,
+            "start_age": self.start_age,
+            "start_solar": self.start_solar,
+            "periods": [period.as_dict() for period in self.periods],
+        }
+
+
+@dataclass(frozen=True)
 class BaziReport:
     solar_datetime: str
     lunar_datetime: str
@@ -169,6 +246,8 @@ class BaziReport:
     day_master: DayMaster
     pillars: tuple[BaziPillar, ...]
     five_elements: dict[str, int]
+    natal_relations: tuple[BaziRelation, ...]
+    yun: YunReport
     rules: dict[str, str]
 
     def as_dict(self) -> dict[str, object]:
@@ -180,5 +259,7 @@ class BaziReport:
             "day_master": self.day_master.as_dict(),
             "pillars": [pillar.as_dict() for pillar in self.pillars],
             "five_elements": self.five_elements,
+            "natal_relations": [relation.as_dict() for relation in self.natal_relations],
+            "yun": self.yun.as_dict(),
             "rules": self.rules,
         }
