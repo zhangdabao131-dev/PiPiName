@@ -24,6 +24,16 @@ pipiname web --open
 
 打开 `http://localhost:9191` 使用页面，打开 `http://localhost:9191/docs` 使用 API 文档。
 
+## 部署到 Render
+
+仓库根目录提供了 `render.yaml`，可以通过 Render Blueprint 部署为免费 Web Service：
+
+1. 登录 [Render Dashboard](https://dashboard.render.com/)，连接 GitHub。
+2. 选择 **New > Blueprint**，并选择本仓库。
+3. 确认 Blueprint 名称和 `pipiname` 服务，然后点击部署。
+
+构建脚本会验证 Git LFS 管理的 SQLite 索引；如果平台检出的是 LFS 指针，会自动下载真实数据库。服务使用 `/api/health` 作为健康检查地址。Render 免费实例可能在闲置后休眠，休眠后的首次访问需要等待冷启动。
+
 网页提供三个功能区域：
 
 - “智能起名”：生成带有古籍出处的双字名候选。

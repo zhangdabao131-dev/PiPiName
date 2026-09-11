@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: pipiname
+    runtime: python
+    plan: free
+    branch: master
+    buildCommand: python scripts/render_build.py
+    startCommand: uvicorn pipiname.api:create_app --factory --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
