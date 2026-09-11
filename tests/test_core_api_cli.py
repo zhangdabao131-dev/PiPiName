@@ -99,6 +99,10 @@ def test_api_endpoints():
     assert 'id="tab-bazi"' in home
     assert "fetch('/api/bazi/analyze'" in home
     assert "function renderBaziReport" in home
+    assert "出生八字四柱（原局）" in home
+    assert "四柱详细排盘" in home
+    assert 'id="bazi-natal-pillars"' in home
+    assert "natal-pillar-ganzhi" in home
     assert "五行表层分布" in home
     assert 'class="bazi-label-column"' in home
     assert 'class="bazi-pillar-column" span="4"' in home

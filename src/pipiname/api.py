@@ -998,6 +998,48 @@ HTML_PAGE = """
       margin-top: 4px;
     }
 
+    .natal-pillars-card {
+      background: var(--color-card-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .natal-pillars-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .natal-pillar {
+      padding: 14px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      text-align: center;
+      background: #f8fafc;
+    }
+
+    .natal-pillar-name {
+      color: var(--color-text-muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .natal-pillar-ganzhi {
+      margin-top: 5px;
+      color: var(--color-primary);
+      font-family: var(--font-serif);
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: 4px;
+    }
+
+    .natal-pillar-detail {
+      margin-top: 4px;
+      color: var(--color-text-muted);
+      font-size: 12px;
+    }
+
     .bazi-table-card {
       background: var(--color-card-bg);
       border: 1px solid var(--color-border);
@@ -1281,6 +1323,10 @@ HTML_PAGE = """
 
       .element-grid {
         grid-template-columns: repeat(2, 1fr);
+      }
+
+      .natal-pillars-grid {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
       }
 
       footer {
@@ -1602,6 +1648,10 @@ HTML_PAGE = """
             <p>请在左侧“八字排盘”中填写出生日期和时间，此处将展示四柱、十神、藏干、纳音及五行表层分布。</p>
           </div>
           <div id="bazi-content" class="bazi-layout" style="display:none;">
+            <div class="natal-pillars-card">
+              <div class="section-heading">出生八字四柱（原局）</div>
+              <div id="bazi-natal-pillars" class="natal-pillars-grid"></div>
+            </div>
             <div class="bazi-summary">
               <div class="bazi-summary-item"><div class="bazi-summary-label">公历时间</div><div id="bazi-solar" class="bazi-summary-value">-</div></div>
               <div class="bazi-summary-item"><div class="bazi-summary-label">农历时间</div><div id="bazi-lunar" class="bazi-summary-value">-</div></div>
@@ -1610,7 +1660,9 @@ HTML_PAGE = """
               <div class="bazi-summary-item"><div class="bazi-summary-label">大运顺逆</div><div id="bazi-yun-direction" class="bazi-summary-value">-</div></div>
               <div class="bazi-summary-item"><div class="bazi-summary-label">起运</div><div id="bazi-yun-start" class="bazi-summary-value">-</div></div>
             </div>
-            <div class="bazi-table-card">
+            <div>
+              <div class="section-heading">四柱详细排盘</div>
+              <div class="bazi-table-card">
               <table class="bazi-table">
                 <colgroup>
                   <col class="bazi-label-column">
@@ -1619,6 +1671,7 @@ HTML_PAGE = """
                 <thead><tr><th>项目</th><th>年柱</th><th>月柱</th><th>日柱</th><th>时柱</th></tr></thead>
                 <tbody id="bazi-table-body"></tbody>
               </table>
+              </div>
             </div>
             <div>
               <div class="section-heading">五行表层分布</div>
@@ -1963,6 +2016,24 @@ HTML_PAGE = """
       document.getElementById('bazi-day-master').textContent = `${report.day_master.yinyang}${report.day_master.element} · ${report.day_master.stem}`;
       document.getElementById('bazi-yun-direction').textContent = `${report.yun.gender} · ${report.yun.direction}`;
       document.getElementById('bazi-yun-start').textContent = `${report.yun.start_age}（${report.yun.start_solar}）`;
+
+      const natalPillars = document.getElementById('bazi-natal-pillars');
+      natalPillars.innerHTML = '';
+      for (const pillar of report.pillars) {
+        const card = document.createElement('div');
+        card.className = 'natal-pillar';
+        const name = document.createElement('div');
+        name.className = 'natal-pillar-name';
+        name.textContent = pillar.name;
+        const ganzhi = document.createElement('div');
+        ganzhi.className = 'natal-pillar-ganzhi';
+        ganzhi.textContent = pillar.ganzhi;
+        const detail = document.createElement('div');
+        detail.className = 'natal-pillar-detail';
+        detail.textContent = `${pillar.stem_yinyang}${pillar.stem_element} / ${pillar.branch_element}`;
+        card.append(name, ganzhi, detail);
+        natalPillars.appendChild(card);
+      }
 
       const rows = [
         ['八字', (pillar) => pillar.ganzhi, 'ganzhi-cell'],
